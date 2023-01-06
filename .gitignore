@@ -1,3 +1,5 @@
 /.vscode
 node
 main
+server
+client
