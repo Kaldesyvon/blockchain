@@ -1,15 +1,24 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define MAXLINE 1024
 #define MAXNODES 6
+#define MSG_TYPE_HEARTBEAT 0
+#define MSG_TYPE_ORDINARY  1
+
+struct message {
+    uint8_t type;  // Message type (heartbeat or ordinary)
+    uint16_t data; // Data field (for ordinary messages)
+};
 
 struct parameters
 {
@@ -18,10 +27,13 @@ struct parameters
     size_t *known_ports_count_param;
 };
 
-// update_known_ports(uint16_t *known_ports, size_t *known_ports_count)
-// {
-
-// }
+void print_known_nodes(uint16_t *known_ports, size_t known_ports_count)
+{
+    for (size_t i = 0; i < known_ports_count; i++)
+    {
+        printf("known node: %d\n", known_ports[i]);
+    }
+}
 
 int create_socket_and_bind(int port)
 {
@@ -47,7 +59,6 @@ int create_socket_and_bind(int port)
         exit(EXIT_FAILURE);
     }
 
-    printf("binding success!\n");
     return socketfd;
 }
 
@@ -57,8 +68,6 @@ void *listen_messages(void *arg)
     int socketfd = params->socketfd_param;
     uint16_t *known_ports = params->known_ports_param;
     size_t *known_ports_count = params->known_ports_count_param;
-
-    // printf("socketfd: %d and known_ports: %d\n", socketfd, known_ports[0]);
 
     while (1)
     {
@@ -73,15 +82,9 @@ void *listen_messages(void *arg)
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(cliaddr.sin_addr), ip, INET_ADDRSTRLEN);
 
-        // if (strcmp(message, "heartbeat") == 0)
-        // {
-        //     update_known_ports(known_ports, known_ports_count);
-        // }
-
         uint16_t sender_port = ntohs(cliaddr.sin_port);
 
         printf("sender address: %s:%d and he send this: %s\n", ip, sender_port, message);
-
 
         // TODO: save port as known node (clear array and fill them with ports from heartbeat)
     }
@@ -92,38 +95,77 @@ void send_message(int socketfd, char *message, uint16_t *known_ports, size_t kno
 {
     for (size_t i = 0; i < known_ports_count; i++)
     {
-        printf("%d\n", known_ports[i]);
         struct sockaddr_in servaddr;
 
         servaddr.sin_family = AF_INET;
         servaddr.sin_addr.s_addr = INADDR_ANY;
         servaddr.sin_port = htons(known_ports[i]);
 
-        sendto(socketfd, message, strlen(message), MSG_DONTWAIT, (const struct sockaddr *)&servaddr, sizeof(servaddr));
-
-        close(socketfd);
+        sendto(socketfd, message, strlen(message), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
     }
 }
 
-// Driver code
-int main(const int argc, const char *argv[])
+void *send_heartbeat(void *arg)
 {
-    int socketfd;
-    struct parameters params;
-    size_t *known_ports_count = (size_t *)calloc(1, sizeof(size_t));
+    struct parameters *params = (struct parameters *)arg;
+    int socketfd = params->socketfd_param;
+    uint16_t *known_ports = params->known_ports_param;
+    size_t *known_ports_count = params->known_ports_count_param;
 
+    char *message = "heartbeat"; // todo: send known hosts
+
+    while (1)
+    {
+        sleep(10);
+
+        for (size_t i = 0; i < *known_ports_count; i++)
+        {
+            struct sockaddr_in servaddr;
+
+            servaddr.sin_family = AF_INET;
+            servaddr.sin_addr.s_addr = INADDR_ANY;
+            servaddr.sin_port = htons(known_ports[i]);
+
+            int n, len;
+
+            sendto(socketfd, message, strlen(message), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+
+            printf("heartbeat sent to %d\n", known_ports[i]);
+
+            print_known_nodes(known_ports, *known_ports_count);
+        }
+    }
+
+    return NULL;
+}
+
+void *listen_heartbeat(void *arg)
+{
+    struct parameters *params = (struct parameters *)arg;
+    int socketfd = params->socketfd_param;
+    uint16_t *known_ports = params->known_ports_param;
+    size_t *known_ports_count = params->known_ports_count_param;
+
+    return NULL;
+}
+
+// Driver code
+int main(const int argc, const char *argv[]) // todo: known hosts should not be allocated, nodes needs to send it todo: create struct of message, that will determine if thats heartbeat or message
+{
     int port = atoi(argv[1]);
     int port_to_connect = atoi(argv[2]);
 
-    uint16_t *known_ports = (uint16_t *)calloc(MAXNODES * sizeof(uint16_t));
+    int socketfd;
+    struct parameters params;
+
+    uint16_t *known_ports = (uint16_t *)calloc(MAXNODES, sizeof(uint16_t));
+    size_t *known_ports_count = (size_t *)calloc(1, sizeof(size_t));
 
     if (port_to_connect != 0)
     {
-        // known_ports[*known_ports_count] = port_to_connect;
-        // known_ports_count++;
-        known_ports[0] = 8080;
-        known_ports[1] = 8081;
-        *known_ports_count = 2;
+        known_ports[*known_ports_count] = port_to_connect;
+        *known_ports_count += 1;
+        print_known_nodes(known_ports, *known_ports_count);
     }
 
     socketfd = create_socket_and_bind(port);
@@ -132,9 +174,11 @@ int main(const int argc, const char *argv[])
     params.known_ports_param = known_ports;
     params.known_ports_count_param = known_ports_count;
 
-    pthread_t thread_id;
-    // todo: heartbeat
-    pthread_create(&thread_id, NULL, listen_messages, &params);
+    pthread_t listen_thread_id, listen_heartbeat_thread_id, send_heartbeat_thread_id;
+
+    pthread_create(&listen_thread_id, NULL, listen_messages, &params);
+    pthread_create(&listen_heartbeat_thread_id, NULL, listen_heartbeat, &params);
+    pthread_create(&send_heartbeat_thread_id, NULL, send_heartbeat, &params);
 
     printf("Type help to get some help\n");
 
@@ -145,30 +189,34 @@ int main(const int argc, const char *argv[])
         if (strcmp(input, "send") == 0)
         {
             char message[50];
-            printf("\tMessage: ");
+            printf("\tmessage: ");
             scanf("%s", message);
             send_message(socketfd, message, known_ports, *known_ports_count);
         }
         else if (strcmp(input, "help") == 0)
         {
-            printf("\tShowing help:\n");
+            printf("\tshowing help:\n");
             printf("\t\texit\t end program\n");
             printf("\t\tsend\t send message to all known nodes\n");
         }
         else if (strcmp(input, "exit") == 0)
         {
-            printf("\tExiting...\n");
+            printf("\texiting...\n");
             free(known_ports);
-            pthread_cancel(thread_id);
-            return 0;
+            pthread_cancel(send_heartbeat_thread_id);
+            pthread_cancel(listen_heartbeat_thread_id);
+            pthread_cancel(listen_thread_id);
+            break;
         }
         else
         {
-            printf("\tUnknown command!\n");
+            printf("\tunknown command!\n");
         }
     }
 
-    pthread_join(thread_id, NULL);
+    pthread_join(send_heartbeat_thread_id, NULL);
+    pthread_join(listen_thread_id, NULL);
+    pthread_join(listen_heartbeat_thread_id, NULL);
 
     return 0;
 }
