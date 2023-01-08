@@ -13,9 +13,10 @@
 #define MAXLINE 1024
 #define MAXNODES 6
 #define MSG_TYPE_HEARTBEAT 0
-#define MSG_TYPE_ORDINARY  1
+#define MSG_TYPE_ORDINARY 1
 
-struct message {
+struct message
+{
     uint8_t type;  // Message type (heartbeat or ordinary)
     uint16_t data; // Data field (for ordinary messages)
 };
@@ -31,12 +32,13 @@ void print_known_nodes(uint16_t *known_ports, size_t known_ports_count)
 {
     for (size_t i = 0; i < known_ports_count; i++)
     {
-        printf("known node: %d\n", known_ports[i]);
+        printf("\tknown node: %d\n", known_ports[i]);
     }
 }
 
 int create_socket_and_bind(int port)
 {
+    // todo: sockopt
     int socketfd = socket(AF_INET, SOCK_DGRAM, 0);
 
     if (socketfd < 0)
@@ -85,7 +87,7 @@ void *listen_messages(void *arg)
         uint16_t sender_port = ntohs(cliaddr.sin_port);
 
         printf("sender address: %s:%d and he send this: %s\n", ip, sender_port, message);
-
+        // todo: distinguish heartbeat from message
         // TODO: save port as known node (clear array and fill them with ports from heartbeat)
     }
     return NULL;
@@ -139,6 +141,7 @@ void *send_heartbeat(void *arg)
     return NULL;
 }
 
+// todo: remove this
 void *listen_heartbeat(void *arg)
 {
     struct parameters *params = (struct parameters *)arg;
@@ -149,7 +152,6 @@ void *listen_heartbeat(void *arg)
     return NULL;
 }
 
-// Driver code
 int main(const int argc, const char *argv[]) // todo: known hosts should not be allocated, nodes needs to send it todo: create struct of message, that will determine if thats heartbeat or message
 {
     int port = atoi(argv[1]);
@@ -163,9 +165,12 @@ int main(const int argc, const char *argv[]) // todo: known hosts should not be 
 
     if (port_to_connect != 0)
     {
-        known_ports[*known_ports_count] = port_to_connect;
-        *known_ports_count += 1;
-        print_known_nodes(known_ports, *known_ports_count);
+        known_ports[0] = 8081;
+        known_ports[1] = 8080;
+        *known_ports_count = 2;
+        // known_ports[*known_ports_count] = port_to_connect;
+        // *known_ports_count += 1;
+        // print_known_nodes(known_ports, *known_ports_count);
     }
 
     socketfd = create_socket_and_bind(port);
@@ -193,9 +198,14 @@ int main(const int argc, const char *argv[]) // todo: known hosts should not be 
             scanf("%s", message);
             send_message(socketfd, message, known_ports, *known_ports_count);
         }
+        else if (strcmp(input, "print") == 0)
+        {
+            print_known_nodes(known_ports, *known_ports_count);
+        }
         else if (strcmp(input, "help") == 0)
         {
             printf("\tshowing help:\n");
+            printf("\t\tprint\t prinkt known nodes\n");
             printf("\t\texit\t end program\n");
             printf("\t\tsend\t send message to all known nodes\n");
         }
