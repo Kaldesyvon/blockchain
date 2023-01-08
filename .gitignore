@@ -1,5 +1,4 @@
 /.vscode
-node
-main
-server
-client
+*.out
+*[^\.c]
+try.c
