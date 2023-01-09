@@ -2,7 +2,7 @@
 
 static int port;
 
-int main(const int argc, const char *argv[]) // todo: known hosts should not be allocated, nodes needs to send it todo: create struct of message, that will determine if thats heartbeat or message
+int main(const int argc, const char *argv[]) // todo: add alive nodes list that newly created thread will count aliveness of node and if trehsold is exceded, than remove from known nodes
 {
     port = atoi(argv[1]);
     int port_to_connect = atoi(argv[2]);
@@ -15,12 +15,8 @@ int main(const int argc, const char *argv[]) // todo: known hosts should not be 
 
     if (port_to_connect != 0)
     {
-        // known_ports[0] = 8080;
-        // known_ports[1] = 8081;
-        // *known_ports_count = 2;
         known_ports[*known_ports_count] = port_to_connect;
         *known_ports_count += 1;
-        // print_known_nodes(known_ports, *known_ports_count);
     }
 
     socketfd = create_socket_and_bind(port);
@@ -49,12 +45,15 @@ int main(const int argc, const char *argv[]) // todo: known hosts should not be 
         }
         else if (strcmp(input, "print") == 0)
         {
+            if(*known_ports_count == 0){
+                printf("\tno node is known");
+            }
             print_known_nodes(known_ports, *known_ports_count);
         }
         else if (strcmp(input, "help") == 0)
         {
             printf("\tshowing help:\n");
-            printf("\t\tprint\t prinkt known nodes\n");
+            printf("\t\tprint\t print known nodes\n");
             printf("\t\texit\t end program\n");
             printf("\t\tsend\t send message to all known nodes\n");
         }
@@ -157,7 +156,7 @@ void *send_heartbeat(void *arg)
 
     while (1)
     {
-        sleep(10);
+        sleep(HEARTBEAT_TIMER);
 
         for (size_t i = 0; i < *known_ports_count; i++)
         {
@@ -173,13 +172,9 @@ void *send_heartbeat(void *arg)
             memcpy(packet.data.ports, known_ports, sizeof(known_ports));
             append(packet.data.ports, port);
 
-            print_known_nodes(known_ports, get_length(known_ports));
-
             sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 
-            printf("heartbeat sent to %d\n", known_ports[i]);
-
-            // print_known_nodes(known_ports, *known_ports_count);
+            // printf("heartbeat sent to %d\n", known_ports[i]);
         }
     }
 
@@ -198,8 +193,6 @@ int create_socket_and_bind(int port)
     }
 
     struct sockaddr_in servaddr;
-
-    memset(&servaddr, 0, sizeof(servaddr));
 
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = INADDR_ANY;

@@ -16,6 +16,7 @@
 
 #define MAXLINE 1024
 #define MAXNODES 6
+#define HEARTBEAT_TIMER 10
 
 #define MSG_TYPE_HEARTBEAT 0
 #define MSG_TYPE_ORDINARY 1
