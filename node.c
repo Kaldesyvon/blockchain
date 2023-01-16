@@ -1,22 +1,28 @@
 #include "node.h"
 
-static int port;
+static uint16_t port;
 
 int main(const int argc, const char *argv[]) // todo: add alive nodes list that newly created thread will count aliveness of node and if trehsold is exceded, than remove from known nodes
 {
     port = atoi(argv[1]);
-    int port_to_connect = atoi(argv[2]);
+    uint16_t port_to_connect = atoi(argv[2]);
 
     int socketfd;
     Parameters params;
 
-    uint16_t *known_ports = (uint16_t *)calloc(MAXNODES + 1, sizeof(uint16_t)); // ensure that node has room for its own port to send over heartbeat
+    Known_Node *known_ports = (Known_Node *)calloc(MAXNODES + 1, sizeof(Known_Node)); // ensure that node has room for its own port to send over heartbeat
     size_t *known_ports_count = (size_t *)calloc(1, sizeof(size_t));
 
     if (port_to_connect != 0)
     {
-        known_ports[*known_ports_count] = port_to_connect;
+        known_ports[*known_ports_count].port = port_to_connect;
+
+        struct timeval time_of_node_creation;
+        gettimeofday(&time_of_node_creation, NULL);
+
+        known_ports[*known_ports_count].time_of_response = time_of_node_creation;
         *known_ports_count += 1;
+        printf("node created at %lds %ldus\n", known_ports[0].time_of_response.tv_sec, known_ports[0].time_of_response.tv_usec);
     }
 
     socketfd = create_socket_and_bind(port);
@@ -25,7 +31,7 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
     params.known_ports_param = known_ports;
     params.known_ports_count_param = known_ports_count;
 
-    pthread_t listen_thread_id, listen_heartbeat_thread_id, send_heartbeat_thread_id;
+    pthread_t listen_thread_id, send_heartbeat_thread_id;
 
     pthread_create(&listen_thread_id, NULL, listen_messages, &params);
     pthread_create(&send_heartbeat_thread_id, NULL, send_heartbeat, &params);
@@ -45,7 +51,8 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
         }
         else if (strcmp(input, "print") == 0)
         {
-            if(*known_ports_count == 0){
+            if (*known_ports_count == 0)
+            {
                 printf("\tno node is known");
             }
             print_known_nodes(known_ports, *known_ports_count);
@@ -81,7 +88,7 @@ void *listen_messages(void *arg)
 {
     Parameters *params = (Parameters *)arg;
     int socketfd = params->socketfd_param;
-    uint16_t *known_ports = params->known_ports_param;
+    Known_Node *known_ports = params->known_ports_param;
     size_t *known_ports_count = params->known_ports_count_param;
 
     while (1)
@@ -89,7 +96,7 @@ void *listen_messages(void *arg)
         Packet packet;
 
         struct sockaddr_in cliaddr;
-        int len = sizeof(cliaddr);
+        uint len;
 
         int n = recvfrom(socketfd, &packet, sizeof(Packet), MSG_WAITALL, (struct sockaddr *)&cliaddr, &len);
 
@@ -104,14 +111,14 @@ void *listen_messages(void *arg)
         }
         else if (packet.type == MSG_TYPE_HEARTBEAT)
         {
-            printf("got heartbeat\n");
+            printf("got heartbeat from: %d\n", sender_port);
             if (*known_ports_count == MAXNODES)
             {
                 printf("this node has maximum count of known nodes!\n");
                 continue;
             }
 
-            uint16_t *received_ports = calloc(MAXNODES, sizeof(uint16_t));
+            Known_Node *received_ports = (Known_Node *)calloc(MAXNODES, sizeof(Known_Node));
 
             memcpy(received_ports, packet.data.ports, sizeof(packet.data.ports));
 
@@ -128,7 +135,7 @@ void *listen_messages(void *arg)
     return NULL;
 }
 
-void send_message(int socketfd, char *message, uint16_t *known_ports, size_t known_ports_count)
+void send_message(int socketfd, char *message, Known_Node *known_ports, size_t known_ports_count)
 {
     for (size_t i = 0; i < known_ports_count; i++)
     {
@@ -136,7 +143,7 @@ void send_message(int socketfd, char *message, uint16_t *known_ports, size_t kno
 
         servaddr.sin_family = AF_INET;
         servaddr.sin_addr.s_addr = INADDR_ANY;
-        servaddr.sin_port = htons(known_ports[i]);
+        servaddr.sin_port = htons(known_ports[i].port);
 
         Packet packet;
 
@@ -151,7 +158,7 @@ void *send_heartbeat(void *arg)
 {
     Parameters *params = (Parameters *)arg;
     int socketfd = params->socketfd_param;
-    uint16_t *known_ports = params->known_ports_param;
+    Known_Node *known_ports = params->known_ports_param;
     size_t *known_ports_count = params->known_ports_count_param;
 
     while (1)
@@ -164,7 +171,7 @@ void *send_heartbeat(void *arg)
 
             servaddr.sin_family = AF_INET;
             servaddr.sin_addr.s_addr = INADDR_ANY;
-            servaddr.sin_port = htons(known_ports[i]);
+            servaddr.sin_port = htons(known_ports[i].port);
 
             Packet packet;
 
@@ -174,7 +181,7 @@ void *send_heartbeat(void *arg)
 
             sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 
-            // printf("heartbeat sent to %d\n", known_ports[i]);
+            printf("heartbeat sent to %d\n", known_ports[i].port);
         }
     }
 
@@ -207,25 +214,25 @@ int create_socket_and_bind(int port)
     return socketfd;
 }
 
-void print_known_nodes(uint16_t *known_ports, size_t known_ports_count)
+void print_known_nodes(Known_Node *known_ports, size_t known_ports_count)
 {
     for (size_t i = 0; i < known_ports_count; i++)
     {
-        printf("\tknown node: %d\n", known_ports[i]);
+        printf("\tknown node: %d\n", known_ports[i].port);
     }
 }
 
-void merge_known_ports(uint16_t *known_ports, size_t known_ports_count, uint16_t *received_ports, size_t received_ports_count)
+void merge_known_ports(Known_Node *known_ports, size_t known_ports_count, Known_Node *received_ports, size_t received_ports_count)
 {
     for (size_t i = 0; i < received_ports_count; i++)
     {
-        if (received_ports[i] == port)
+        if (received_ports[i].port == port)
             continue;
         bool is_present = false;
         for (size_t j = 0; j < known_ports_count; j++)
         {
 
-            if (known_ports[j] == received_ports[i])
+            if (known_ports[j].port == received_ports[i].port)
             {
                 is_present = true;
                 break;
@@ -233,17 +240,18 @@ void merge_known_ports(uint16_t *known_ports, size_t known_ports_count, uint16_t
         }
         if (!is_present)
         {
-            append(known_ports, received_ports[i]);
+            append(known_ports, received_ports[i].port);
         }
     }
 }
 
-void append(uint16_t *array, uint16_t port)
+void append(Known_Node *array, uint16_t port)
 {
     size_t size = get_length(array);
     if (size < MAXNODES)
     {
-        array[size] = port;
+        array[size].port = port;
+        gettimeofday(&array[size].time_of_response, NULL);
     }
     else
     {
@@ -251,10 +259,10 @@ void append(uint16_t *array, uint16_t port)
     }
 }
 
-size_t get_length(uint16_t *array)
+size_t get_length(Known_Node *array)
 {
     size_t size = 0;
-    while (array[size] != 0 && size < MAXNODES)
+    while (array[size].port != 0 && array[size].time_of_response.tv_sec != 0 && size < MAXNODES)
     {
         size++;
     }
