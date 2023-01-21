@@ -1,6 +1,6 @@
 #include "node.h"
 
-static int port;
+static uint16_t port;
 
 int main(const int argc, const char *argv[]) // todo: add alive nodes list that newly created thread will count aliveness of node and if trehsold is exceded, than remove from known nodes
 {
@@ -241,7 +241,7 @@ void merge_known_ports(uint16_t *known_ports, size_t known_ports_count, uint16_t
 void append(uint16_t *array, uint16_t port)
 {
     size_t size = get_length(array);
-    if (size < MAXNODES)
+    if (size <= MAXNODES)
     {
         array[size] = port;
     }
