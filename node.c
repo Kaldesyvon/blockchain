@@ -11,10 +11,16 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
     Parameters params;
 
     uint16_t *known_ports = (uint16_t *)calloc(MAXNODES + 1, sizeof(uint16_t)); // ensure that node has room for its own port to send over heartbeat
+    time_t *alive_ports = (time_t *)calloc(MAXNODES, sizeof(time_t));
     size_t *known_ports_count = (size_t *)calloc(1, sizeof(size_t));
 
     if (port_to_connect != 0)
     {
+        struct timeval time;
+
+        gettimeofday(&time, NULL);
+        alive_ports[*known_ports_count] = time.tv_sec;
+
         known_ports[*known_ports_count] = port_to_connect;
         *known_ports_count += 1;
     }
@@ -23,6 +29,7 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
 
     params.socketfd_param = socketfd;
     params.known_ports_param = known_ports;
+    params.alive_ports_param = alive_ports;
     params.known_ports_count_param = known_ports_count;
 
     pthread_t listen_thread_id, listen_heartbeat_thread_id, send_heartbeat_thread_id;
@@ -45,7 +52,8 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
         }
         else if (strcmp(input, "print") == 0)
         {
-            if(*known_ports_count == 0){
+            if (*known_ports_count == 0)
+            {
                 printf("\tno node is known");
             }
             print_known_nodes(known_ports, *known_ports_count);
@@ -82,6 +90,7 @@ void *listen_messages(void *arg)
     Parameters *params = (Parameters *)arg;
     int socketfd = params->socketfd_param;
     uint16_t *known_ports = params->known_ports_param;
+    time_t *alive_ports = params->alive_ports_param;
     size_t *known_ports_count = params->known_ports_count_param;
 
     while (1)
@@ -111,7 +120,7 @@ void *listen_messages(void *arg)
                 continue;
             }
 
-            uint16_t *received_ports = (uint16_t*)calloc(MAXNODES, sizeof(uint16_t));
+            uint16_t *received_ports = (uint16_t *)calloc(MAXNODES, sizeof(uint16_t));
 
             memcpy(received_ports, packet.data.ports, sizeof(packet.data.ports));
 
@@ -152,6 +161,7 @@ void *send_heartbeat(void *arg)
     Parameters *params = (Parameters *)arg;
     int socketfd = params->socketfd_param;
     uint16_t *known_ports = params->known_ports_param;
+    time_t *alive_ports = params->alive_ports_param;
     size_t *known_ports_count = params->known_ports_count_param;
 
     while (1)
@@ -176,9 +186,25 @@ void *send_heartbeat(void *arg)
 
             // printf("heartbeat sent to %d\n", known_ports[i]);
         }
+
+        reduce_ports(known_ports, alive_ports, *known_ports_count);
     }
 
     return NULL;
+}
+
+void reduce_ports(uint16_t *known_ports, time_t *alive_ports, size_t known_ports_count)
+{
+    for (size_t i = 0; i < known_ports_count; i++)
+    {
+        struct timeval now;
+        gettimeofday(&now, NULL);
+
+        if (now.tv_sec - alive_ports[i] < HEARTBEAT_TIMER * 3)
+        {
+            
+        }
+    }
 }
 
 int create_socket_and_bind(int port)
