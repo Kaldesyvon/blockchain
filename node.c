@@ -89,7 +89,7 @@ void *listen_messages(void *arg)
         Packet packet;
 
         struct sockaddr_in cliaddr;
-        int len = sizeof(cliaddr);
+        socklen_t len = sizeof(cliaddr);
 
         int n = recvfrom(socketfd, &packet, sizeof(Packet), MSG_WAITALL, (struct sockaddr *)&cliaddr, &len);
 
@@ -111,7 +111,7 @@ void *listen_messages(void *arg)
                 continue;
             }
 
-            uint16_t *received_ports = calloc(MAXNODES, sizeof(uint16_t));
+            uint16_t *received_ports = (uint16_t*)calloc(MAXNODES, sizeof(uint16_t));
 
             memcpy(received_ports, packet.data.ports, sizeof(packet.data.ports));
 

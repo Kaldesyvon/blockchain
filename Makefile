@@ -1,2 +1,2 @@
 all:
-	g++ node.cpp -o node
+	g++ node.c -lpthread -o server
