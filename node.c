@@ -1,6 +1,8 @@
 #include "node.h"
 
+
 static uint16_t port;
+
 
 int main(const int argc, const char *argv[]) // todo: add alive nodes list that newly created thread will count aliveness of node and if trehsold is exceded, than remove from known nodes
 {
@@ -53,7 +55,7 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
         {
             if (*known_ports_count == 0)
             {
-                printf("\tno node is known");
+                printf("\tno node is known\n");
             }
             print_known_nodes(known_ports, *known_ports_count);
         }
@@ -120,7 +122,10 @@ void *listen_messages(void *arg)
 
             Known_Node *received_ports = (Known_Node *)calloc(MAXNODES, sizeof(Known_Node));
 
-            memcpy(received_ports, packet.data.ports, sizeof(packet.data.ports));
+            memcpy(received_ports, packet.data.ports, sizeof(packet.data.ports)); //fixme seg fault
+
+            printf("i am here\n");
+            printf("%d\n", received_ports[0].port);
 
             merge_known_ports(known_ports, *known_ports_count, received_ports, get_length(received_ports));
             *known_ports_count = get_length(known_ports);
@@ -175,9 +180,10 @@ void *send_heartbeat(void *arg)
 
             Packet packet;
 
+
             packet.type = MSG_TYPE_HEARTBEAT;
-            memcpy(packet.data.ports, known_ports, sizeof(known_ports));
-            append(packet.data.ports, port);
+            memcpy(&packet.data.ports, known_ports, sizeof(known_ports));
+            // append(packet.data.ports, port);
 
             sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 
