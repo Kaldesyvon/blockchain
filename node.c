@@ -1,5 +1,6 @@
 #include "node.h"
 
+static bool run_threads = true;
 static uint16_t port;
 
 int main(const int argc, const char *argv[]) // todo: add alive nodes list that newly created thread will count aliveness of node and if trehsold is exceded, than remove from known nodes
@@ -34,7 +35,7 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
 
     printf("Type help to get some help\n");
 
-    while (1)
+    while (run_threads)
     {
         char input[20];
         scanf("%s", input);
@@ -63,9 +64,7 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
         else if (strcmp(input, "exit") == 0)
         {
             printf("\texiting...\n");
-            free(known_nodes);
-            pthread_cancel(send_heartbeat_thread_id);
-            pthread_cancel(listen_thread_id);
+            run_threads = false;
             break;
         }
         else
@@ -74,8 +73,12 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
         }
     }
 
+
     pthread_join(send_heartbeat_thread_id, NULL);
     pthread_join(listen_thread_id, NULL);
+
+    free(known_nodes);
+    free(known_nodes_count);
 
     return 0;
 }
@@ -87,7 +90,7 @@ void *listen_messages(void *arg)
     uint16_t *known_nodes = params->known_nodes_param;
     size_t *known_nodes_count = params->known_nodes_count_param;
 
-    while (1)
+    while (run_threads)
     {
         Packet packet;
 
@@ -103,6 +106,7 @@ void *listen_messages(void *arg)
 
         if (packet.type == MSG_TYPE_ORDINARY)
         {
+            printf("got message with length of %ld\n", packet.len);
             printf("sender address: %s:%d and he send this: %s\n", ip, sender_port, packet.data.message);
         }
         else if (packet.type == MSG_TYPE_HEARTBEAT)
@@ -114,11 +118,15 @@ void *listen_messages(void *arg)
                 continue;
             }
 
-            uint16_t *received_ports = (uint16_t *)calloc(MAXNODES, sizeof(uint16_t));
+            size_t number_of_nodes = packet.len;
 
-            memcpy(received_ports, packet.data.ports, sizeof(packet.data.ports));
+            printf("got hearbeat with %ld nodes\n", number_of_nodes);
 
-            merge_known_ports(known_nodes, *known_nodes_count, received_ports, get_length(received_ports));
+            uint16_t *received_ports = (uint16_t *)calloc(len, sizeof(uint16_t));
+
+            memcpy(received_ports, packet.data.ports, len * sizeof(uint16_t));
+
+            merge_known_ports(known_nodes, known_nodes_count, received_ports, get_length(received_ports));
             *known_nodes_count = get_length(known_nodes);
 
             free(received_ports);
@@ -128,6 +136,7 @@ void *listen_messages(void *arg)
             printf("cannot distinguish message type");
         }
     }
+    pthread_exit(NULL);
     return NULL;
 }
 
@@ -144,7 +153,8 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, size_t kno
         Packet packet;
 
         packet.type = MSG_TYPE_ORDINARY;
-        memcpy(packet.data.message, message, strlen(message) + 1); // ensures terminator
+        packet.len = strlen(message);
+        memcpy(packet.data.message, message, (strlen(message) + 1) * sizeof(char)); // ensures terminator
 
         sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
     }
@@ -157,7 +167,7 @@ void *send_heartbeat(void *arg)
     uint16_t *known_nodes = params->known_nodes_param;
     size_t *known_nodes_count = params->known_nodes_count_param;
 
-    while (1)
+    while (run_threads)
     {
         sleep(HEARTBEAT_TIMER);
 
@@ -172,8 +182,11 @@ void *send_heartbeat(void *arg)
             Packet packet;
 
             packet.type = MSG_TYPE_HEARTBEAT;
-            memcpy(&packet.data.ports, known_nodes, sizeof(known_nodes));
-            append(packet.data.ports, port);
+
+            packet.len = *known_nodes_count + 1;
+
+            memcpy(&packet.data.ports, known_nodes, (*known_nodes_count + 1) * sizeof(uint16_t));
+            append(packet.data.ports, *known_nodes_count ,port);
 
             sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 
@@ -181,6 +194,7 @@ void *send_heartbeat(void *arg)
         }
     }
 
+    pthread_exit(NULL);
     return NULL;
 }
 
@@ -218,14 +232,14 @@ void print_known_nodes(uint16_t *known_nodes, size_t known_nodes_count)
     }
 }
 
-void merge_known_ports(uint16_t *known_nodes, size_t known_nodes_count, uint16_t *received_ports, size_t received_ports_count)
+void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_t *received_ports, size_t received_ports_count)
 {
     for (size_t i = 0; i < received_ports_count; i++)
     {
         if (received_ports[i] == port)
             continue;
         bool is_present = false;
-        for (size_t j = 0; j < known_nodes_count; j++)
+        for (size_t j = 0; j < *known_nodes_count; j++)
         {
 
             if (known_nodes[j] == received_ports[i])
@@ -236,14 +250,15 @@ void merge_known_ports(uint16_t *known_nodes, size_t known_nodes_count, uint16_t
         }
         if (!is_present)
         {
-            append(known_nodes, received_ports[i]);
+            append(known_nodes, *known_nodes_count, received_ports[i]);
+            *known_nodes_count += 1;
         }
     }
 }
 
-void append(uint16_t *array, uint16_t port)
+void append(uint16_t *array, size_t length ,uint16_t port)
 {
-    size_t size = get_length(array);
+    size_t size = length;
     if (size <= MAXNODES)
     {
         array[size] = port;

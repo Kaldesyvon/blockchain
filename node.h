@@ -30,6 +30,7 @@ typedef union Data
 typedef struct Packet
 {
     uint8_t type;
+    size_t len;
     Data data;
 } Packet;
 
@@ -43,9 +44,9 @@ typedef struct Parameters
 
 int create_socket_and_bind(int port);
 size_t get_length(uint16_t *array);
-void append(uint16_t *array, uint16_t port);
+void append(uint16_t *array, size_t length, uint16_t port);
 void *listen_messages(void *arg);
-void merge_known_ports(uint16_t *known_nodes, size_t known_nodes_count, uint16_t *received_ports, size_t received_ports_count);
+void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_t *received_ports, size_t received_ports_count);
 void print_known_nodes(uint16_t *known_nodes, size_t known_nodes_count);
 void *send_heartbeat(void *arg);
 void send_message(int socketfd, char *message, uint16_t *known_nodes, size_t known_nodes_count);
