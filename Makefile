@@ -1,2 +1,2 @@
 all:
-	g++ --std=c11 node.c -lpthread -o node
+	g++ node.cpp -lpthread -o node
