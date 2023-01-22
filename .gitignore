@@ -1,4 +1,3 @@
 /.vscode
 *.out
-*[^\.(c|h)]
 try.c
