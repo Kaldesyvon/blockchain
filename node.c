@@ -41,7 +41,7 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
         scanf("%s", input);
         if (strcmp(input, "send") == 0)
         {
-            char message[50];
+            char message[1024];
             printf("\tmessage: ");
             scanf("%s", message);
             send_message(socketfd, message, known_nodes, *known_nodes_count);
@@ -72,7 +72,6 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
             printf("\tunknown command!\n");
         }
     }
-
 
     pthread_join(send_heartbeat_thread_id, NULL);
     pthread_join(listen_thread_id, NULL);
@@ -151,10 +150,11 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, size_t kno
         servaddr.sin_port = htons(known_nodes[i]);
 
         Packet packet;
+        memset(&packet, 0, sizeof(Packet));
 
         packet.type = MSG_TYPE_ORDINARY;
         packet.len = strlen(message);
-        memcpy(packet.data.message, message, (strlen(message) + 1) * sizeof(char)); // ensures terminator
+        memcpy(&packet.data.message, message, packet.len * sizeof(char));
 
         sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
     }
@@ -179,18 +179,21 @@ void *send_heartbeat(void *arg)
             servaddr.sin_addr.s_addr = INADDR_ANY;
             servaddr.sin_port = htons(known_nodes[i]);
 
+            // printf("sending heartbeat from %d to %d\n", port, known_nodes[i]);
+
             Packet packet;
 
-            packet.type = MSG_TYPE_HEARTBEAT;
+            memset(&packet, 0, sizeof(Packet));
 
+            packet.type = MSG_TYPE_HEARTBEAT;
             packet.len = *known_nodes_count + 1;
 
-            memcpy(&packet.data.ports, known_nodes, (*known_nodes_count + 1) * sizeof(uint16_t));
-            append(packet.data.ports, *known_nodes_count ,port);
+            memcpy(&packet.data.ports, known_nodes, packet.len * sizeof(uint16_t));
+            memcpy(&packet.data.ports[*known_nodes_count], &port, sizeof(uint16_t));
 
-            sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+            ssize_t send_size = sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 
-            // printf("heartbeat sent to %d\n", known_nodes[i]);
+            // printf("send %ld of bytes where packet is %ld\n", send_size, sizeof(packet));
         }
     }
 
@@ -256,7 +259,7 @@ void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_
     }
 }
 
-void append(uint16_t *array, size_t length ,uint16_t port)
+void append(uint16_t *array, size_t length, uint16_t port)
 {
     size_t size = length;
     if (size <= MAXNODES)

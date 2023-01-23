@@ -23,8 +23,8 @@
 
 typedef union Data
 {
+    uint16_t ports[6];
     char message[1024];
-    uint16_t ports[MAXNODES];
 } Data;
 
 typedef struct Packet
