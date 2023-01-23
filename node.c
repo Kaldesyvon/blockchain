@@ -11,9 +11,12 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
     int socketfd;
     Parameters params;
 
-    uint16_t *known_nodes = (uint16_t *)calloc(MAXNODES, sizeof(uint16_t));
+    known_nodes = (uint16_t *)malloc(MAXNODES * sizeof(uint16_t));
     memset(known_nodes, 0, MAXNODES + 1 * sizeof(uint16_t));
-    size_t *known_nodes_count = (size_t *)calloc(1, sizeof(size_t));
+
+    known_nodes_alive_time = (struct timeval *)malloc(MAXNODES * sizeof(struct timeval));
+
+    known_nodes_count = (size_t *)malloc(sizeof(size_t));
     *known_nodes_count = 0;
 
     if (port_to_connect != 0)
@@ -77,6 +80,7 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
     pthread_join(listen_thread_id, NULL);
 
     free(known_nodes);
+    free(known_nodes_alive_time);
     free(known_nodes_count);
 
     return 0;
@@ -96,7 +100,8 @@ void *listen_messages(void *arg)
         struct sockaddr_in cliaddr;
         socklen_t len = sizeof(cliaddr);
 
-        int n = recvfrom(socketfd, &packet, sizeof(Packet), MSG_WAITALL, (struct sockaddr *)&cliaddr, &len);
+        if (run_threads)
+            recvfrom(socketfd, &packet, sizeof(Packet), MSG_WAITALL, (struct sockaddr *)&cliaddr, &len);
 
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(cliaddr.sin_addr), ip, INET_ADDRSTRLEN);
@@ -124,8 +129,8 @@ void *listen_messages(void *arg)
 
             memcpy(received_ports, packet.data.ports, len * sizeof(uint16_t));
 
-            merge_known_ports(known_nodes, known_nodes_count, received_ports, get_length(received_ports));
-            *known_nodes_count = get_length(known_nodes);
+            merge_known_ports(known_nodes, known_nodes_count, received_ports, packet.len);
+            *known_nodes_count = get_count(known_nodes);
 
             free(received_ports);
         }
@@ -190,7 +195,8 @@ void *send_heartbeat(void *arg)
             memcpy(&packet.data.ports, known_nodes, packet.len * sizeof(uint16_t));
             memcpy(&packet.data.ports[*known_nodes_count], &port, sizeof(uint16_t));
 
-            ssize_t send_size = sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+            if (run_threads)
+                sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 
             // printf("send %ld of bytes where packet is %ld\n", send_size, sizeof(packet));
         }
@@ -238,12 +244,11 @@ void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_
 {
     for (size_t i = 0; i < received_ports_count; i++)
     {
-        if (received_ports[i] == port)
+        if (received_ports[i] == port || received_ports[i] == 0)
             continue;
         bool is_present = false;
         for (size_t j = 0; j < *known_nodes_count; j++)
         {
-
             if (known_nodes[j] == received_ports[i])
             {
                 is_present = true;
@@ -252,31 +257,34 @@ void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_
         }
         if (!is_present)
         {
-            append(known_nodes, *known_nodes_count, received_ports[i]);
-            *known_nodes_count += 1;
+            append(known_nodes, known_nodes_count, received_ports[i]);
         }
     }
 }
 
-void append(uint16_t *array, size_t length, uint16_t port)
+void append(uint16_t *array, size_t *length, uint16_t port)
 {
-    size_t size = length;
-    if (size <= MAXNODES)
+    for (size_t i = 0; i < MAXNODES; i++)
     {
-        array[size] = port;
+        if (array[i] == 0)
+        {
+            array[i] = port;
+            *length += 1;
+            return;
+        }
     }
-    else
-    {
-        printf("cannot append to array with maximum length");
-    }
+    printf("cannot append to array with maximum length");
 }
 
-size_t get_length(uint16_t *array)
+size_t get_count(uint16_t *array)
 {
-    size_t size = 0;
-    while (array[size] != 0 && size < MAXNODES)
+    size_t count = 0;
+    for (size_t i = 0; i < MAXNODES; i++)
     {
-        size++;
+        if (array[i] != 0)
+        {
+            count++;
+        }
     }
-    return size;
+    return count;
 }

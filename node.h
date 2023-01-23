@@ -21,6 +21,10 @@
 #define MSG_TYPE_HEARTBEAT 0
 #define MSG_TYPE_ORDINARY 1
 
+uint16_t *known_nodes;
+struct timeval *known_nodes_alive_time;
+size_t *known_nodes_count;
+
 typedef union Data
 {
     uint16_t ports[MAXNODES + 1];
@@ -41,10 +45,9 @@ typedef struct Parameters
     size_t *known_nodes_count_param;
 } Parameters;
 
-
 int create_socket_and_bind(int port);
-size_t get_length(uint16_t *array);
-void append(uint16_t *array, size_t length, uint16_t port);
+size_t get_count(uint16_t *array);
+void append(uint16_t *array, size_t *length, uint16_t port);
 void *listen_messages(void *arg);
 void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_t *received_ports, size_t received_ports_count);
 void print_known_nodes(uint16_t *known_nodes, size_t known_nodes_count);
