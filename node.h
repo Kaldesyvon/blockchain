@@ -16,14 +16,14 @@
 
 #define MAXLINE 1024
 #define MAXNODES 6
-#define HEARTBEAT_TIMER 10
+#define HEARTBEAT_TIMER 1
 
 #define MSG_TYPE_HEARTBEAT 0
 #define MSG_TYPE_ORDINARY 1
 
 typedef union Data
 {
-    uint16_t ports[6];
+    uint16_t ports[MAXNODES + 1];
     char message[1024];
 } Data;
 

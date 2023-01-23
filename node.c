@@ -11,7 +11,7 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
     int socketfd;
     Parameters params;
 
-    uint16_t *known_nodes = (uint16_t *)calloc(MAXNODES + 1, sizeof(uint16_t)); // ensure that node has room for its own port to send over heartbeatkno
+    uint16_t *known_nodes = (uint16_t *)calloc(MAXNODES, sizeof(uint16_t));
     memset(known_nodes, 0, MAXNODES + 1 * sizeof(uint16_t));
     size_t *known_nodes_count = (size_t *)calloc(1, sizeof(size_t));
     *known_nodes_count = 0;
@@ -105,12 +105,11 @@ void *listen_messages(void *arg)
 
         if (packet.type == MSG_TYPE_ORDINARY)
         {
-            printf("got message with length of %ld\n", packet.len);
+            // printf("got message with length of %ld\n", packet.len);
             printf("sender address: %s:%d and he send this: %s\n", ip, sender_port, packet.data.message);
         }
         else if (packet.type == MSG_TYPE_HEARTBEAT)
         {
-            printf("got heartbeat\n");
             if (*known_nodes_count == MAXNODES)
             {
                 printf("this node has maximum count of known nodes!\n");
@@ -119,7 +118,7 @@ void *listen_messages(void *arg)
 
             size_t number_of_nodes = packet.len;
 
-            printf("got hearbeat with %ld nodes\n", number_of_nodes);
+            // printf("got hearbeat with %ld nodes\n", number_of_nodes);
 
             uint16_t *received_ports = (uint16_t *)calloc(len, sizeof(uint16_t));
 
