@@ -151,12 +151,16 @@ void *listen_messages(void *arg)
 
             free(received_ports);
         }
-        else if (MSG_TYPE_TRANSACTION)
+        else if (packet.type == MSG_TYPE_TRANSACTION)
         {
             Transaction transaction;
             memcpy(&transaction, &packet.data.transaction, sizeof(Transaction));
 
             handle_transaction(&transaction);
+        }
+        else if (packet.type == MSG_TYPE_BLOCK)
+        {
+            // TODO: add block to local blockchain
         }
         else
         {
@@ -236,7 +240,8 @@ void handle_transaction(Transaction *transaction)
     else
     {
         bool am_i_creator = am_i_block_creator();
-        if(am_i_creator){
+        if (am_i_creator)
+        {
             // todo: create block and send it
             create_block();
         }
@@ -248,8 +253,47 @@ void handle_transaction(Transaction *transaction)
     // printf("i have added transaction to my list\n");
 }
 
-void create_block(){
-    
+void create_block()
+{
+    Block new_block;
+
+    blockchain_length++;
+    unsigned long buffer_size = MAX_TRANSACTIONS * sizeof(Transaction);
+
+    printf("here\n");
+
+    new_block.index = blockchain_length;
+    gettimeofday(&new_block.timestamp, NULL);
+    memcpy(&new_block.transactions, &transactions, buffer_size);
+
+    unsigned char *buffer = (unsigned char *)malloc(buffer_size);
+
+    int offset = 0;
+    for (int i = 0; i < MAX_TRANSACTIONS; i++)
+    {
+        memcpy(buffer + offset, &transactions[i], sizeof(Transaction));
+        offset += sizeof(Transaction);
+    }
+
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, buffer, buffer_size);
+    SHA256_Final(new_block.hash, &sha256);
+
+    printf("created block with:\n\tindex: %ld\n\t", new_block.index);
+    for (size_t i = 0; i < sizeof(new_block.hash); ++i)
+    {
+        printf("%02x", new_block.hash[i]);
+    }
+    printf("\n");
+
+    // TODO: print of blocks in memory of node and send message about this block
+
+    blockchain = (Block *)realloc(blockchain, (blockchain_length + 1) * sizeof(Block));
+
+    memcpy(&blockchain[blockchain_length], &new_block, sizeof(Block));
+
+    free(buffer);
 }
 
 void *send_heartbeat(void *arg)

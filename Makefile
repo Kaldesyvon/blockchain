@@ -1,2 +1,2 @@
 all:
-	gcc node.c -lpthread -lcrypto -o node
+	gcc node.c -Wno-deprecated-declarations -lpthread -lcrypto -o node

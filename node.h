@@ -19,7 +19,7 @@
 #define MAX_NODES 6
 #define HEARTBEAT_TIMER 1
 #define MAX_TIMEOUT 5
-#define MAX_TRANSACTIONS 5
+#define MAX_TRANSACTIONS 2
 
 #define MSG_TYPE_HEARTBEAT 0
 #define MSG_TYPE_ORDINARY 1
@@ -67,6 +67,8 @@ typedef struct Parameters
 
 static size_t transaction_count = 0;
 static Transaction *transactions;
+
+static size_t blockchain_length = 0;
 static Block *blockchain;
 
 size_t append(uint16_t *array, size_t *length, uint16_t port);
@@ -81,6 +83,6 @@ void update_response_time(uint16_t *known_nodes, uint16_t sender_port, struct ti
 bool am_i_block_creator();
 void print_transactions();
 void handle_transaction(Transaction *transaction);
-create_block();
+void create_block();
 
 #endif
