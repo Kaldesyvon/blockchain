@@ -9,3 +9,7 @@ compile it with `make all` and then run `./node <node_port> <node_port_to_connec
 # valgrind check
 
 run `valgrind --track-origins=yes --leak-check=full -s` to check all memory leaks
+
+# possible issues
+
+time is represented in unix time

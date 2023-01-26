@@ -20,6 +20,12 @@ int main(const int argc, const char *argv[])
     size_t *known_nodes_count = (size_t *)malloc(sizeof(size_t));
     *known_nodes_count = 0;
 
+    transactions = (Transaction *)malloc(MAX_TRANSACTIONS * sizeof(Transaction));
+    memset(transactions, 0, MAX_TRANSACTIONS * sizeof(Transaction));
+
+    blockchain = (Block *)malloc(sizeof(Block));
+    memset(blockchain, 0, sizeof(Block)); // genesis block
+
     if (port_to_connect != 0)
     {
         known_nodes[*known_nodes_count] = port_to_connect;
@@ -55,20 +61,26 @@ int main(const int argc, const char *argv[])
             char message[1024];
             printf("\tmessage: ");
             scanf("%s", message);
-            send_message(socketfd, message, known_nodes);
+            send_message(socketfd, message, known_nodes, MSG_TYPE_ORDINARY);
+        }
+        else if (strcmp(input, "trans") == 0)
+        {
+            send_message(socketfd, "transaction", known_nodes, MSG_TYPE_TRANSACTION);
+        }
+        else if (strcmp(input, "transprint") == 0)
+        {
+            print_transactions();
         }
         else if (strcmp(input, "print") == 0)
         {
-            if (*known_nodes_count == 0)
-            {
-                printf("\tno node is known\n");
-            }
-            print_known_nodes(known_nodes);
+            print_known_nodes(known_nodes, *known_nodes_count);
         }
         else if (strcmp(input, "help") == 0)
         {
             printf("\tshowing help:\n");
             printf("\t\tprint\t print known nodes\n");
+            printf("\t\ttransprint \tprint known transactions");
+            printf("\t\ttrans\t create transaction\n");
             printf("\t\texit\t end program\n");
             printf("\t\tsend\t send message to all known nodes\n");
         }
@@ -124,16 +136,12 @@ void *listen_messages(void *arg)
         }
         else if (packet.type == MSG_TYPE_HEARTBEAT)
         {
-            printf("got heartbeat from %d\n", sender_port);
+            // printf("got heartbeat from %d\n", sender_port);
             if (*known_nodes_count == MAX_NODES)
             {
                 printf("this node has maximum count of known nodes!\n");
                 continue;
             }
-
-            // size_t number_of_nodes = packet.len;
-
-            // printf("got hearbeat with %ld nodes\n", number_of_nodes);
 
             uint16_t *received_ports = (uint16_t *)calloc(MAX_NODES, sizeof(uint16_t));
 
@@ -142,6 +150,13 @@ void *listen_messages(void *arg)
             merge_known_ports(known_nodes, known_nodes_count, received_ports);
 
             free(received_ports);
+        }
+        else if (MSG_TYPE_TRANSACTION)
+        {
+            Transaction transaction;
+            memcpy(&transaction, &packet.data.transaction, sizeof(Transaction));
+
+            handle_transaction(&transaction);
         }
         else
         {
@@ -153,8 +168,9 @@ void *listen_messages(void *arg)
     return NULL;
 }
 
-void send_message(int socketfd, char *message, uint16_t *known_nodes)
+void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_type)
 {
+    bool is_transaction_added = false;
     for (size_t i = 0; i < MAX_NODES && known_nodes[i] != 0; i++)
     {
         struct sockaddr_in servaddr;
@@ -165,13 +181,75 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes)
 
         Packet packet;
         memset(&packet, 0, sizeof(Packet));
+        packet.type = msg_type;
 
-        packet.type = MSG_TYPE_ORDINARY;
-        packet.len = strlen(message);
-        memcpy(&packet.data.message, message, packet.len * sizeof(char));
+        if (msg_type == MSG_TYPE_ORDINARY)
+        {
+            packet.len = strlen(message);
+            memcpy(&packet.data.message, message, packet.len * sizeof(char));
+        }
+        else if (msg_type == MSG_TYPE_TRANSACTION)
+        {
+            packet.len = strlen(message);
 
-        sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+            Transaction transaction;
+            memset(&transaction, 0, sizeof(Transaction));
+
+            transaction.port = port;
+            gettimeofday(&transaction.timestamp, NULL);
+            memcpy(&transaction.message, "transaction", sizeof("transaction"));
+
+            memcpy(&packet.data.transaction, &transaction, sizeof(Transaction));
+
+            if (!is_transaction_added)
+            {
+                handle_transaction(&transaction);
+                is_transaction_added = true;
+            }
+
+            // printf("sending transaction\n");
+        }
+        else if (msg_type == MSG_TYPE_BLOCK)
+        {
+            // todo
+        }
+        else
+        {
+            printf("cannot send unknown type of message");
+            return;
+        }
+
+        if (sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)
+        {
+            printf("error sending packet\n");
+        }
     }
+}
+
+void handle_transaction(Transaction *transaction)
+{
+    memcpy(&transactions[transaction_count], transaction, sizeof(Transaction));
+    if (transaction_count < MAX_TRANSACTIONS - 1)
+    {
+        transaction_count++;
+    }
+    else
+    {
+        bool am_i_creator = am_i_block_creator();
+        if(am_i_creator){
+            // todo: create block and send it
+            create_block();
+        }
+        printf("i am creator: %d\n", am_i_creator);
+        memset(transactions, 0, MAX_TRANSACTIONS * sizeof(Transaction));
+        transaction_count = 0;
+    }
+    // printf("i got transaction from %d\n", transactions[transaction_count].port);
+    // printf("i have added transaction to my list\n");
+}
+
+void create_block(){
+    
 }
 
 void *send_heartbeat(void *arg)
@@ -192,7 +270,7 @@ void *send_heartbeat(void *arg)
         {
             if (known_nodes[i] != 0)
             {
-                printf("sending heartbeat to %d\n", known_nodes[i]);
+                // printf("sending heartbeat to %d\n", known_nodes[i]);
 
                 struct sockaddr_in servaddr;
 
@@ -231,11 +309,11 @@ void reduce_dead_nodes(uint16_t *known_nodes, size_t *known_nodes_count, struct 
             struct timeval now;
             gettimeofday(&now, NULL);
 
-            printf("now: %ld last response %ld\n", now.tv_sec, known_nodes_alive_time[i].tv_sec);
+            // printf("now: %ld last response %ld\n", now.tv_sec, known_nodes_alive_time[i].tv_sec);
 
             if (now.tv_sec - known_nodes_alive_time[i].tv_sec > MAX_TIMEOUT)
             {
-                printf("removing %d\n", known_nodes[i]);
+                // printf("removing %d\n", known_nodes[i]);
 
                 known_nodes[i] = 0;
                 *known_nodes_count -= 1;
@@ -271,13 +349,37 @@ int create_socket_and_bind(int port)
     return socketfd;
 }
 
-void print_known_nodes(uint16_t *known_nodes)
+void print_known_nodes(uint16_t *known_nodes, size_t known_nodes_count)
 {
-    for (size_t i = 0; i < MAX_NODES; i++)
+    if (known_nodes_count == 0)
     {
-        if (known_nodes[i] != 0)
+        printf("\tno node is known\n");
+    }
+    else
+    {
+        for (size_t i = 0; i < MAX_NODES; i++)
         {
-            printf("\tknown node: %d\n", known_nodes[i]);
+            if (known_nodes[i] != 0)
+            {
+                printf("\tknown node: %d\n", known_nodes[i]);
+            }
+        }
+    }
+}
+
+void print_transactions()
+{
+    if (transaction_count == 0)
+    {
+        printf("\tno transactions are known\n");
+    }
+    else
+    {
+        printf("\ttransactions:\n");
+        for (int i = 0; i < transaction_count; i++)
+        {
+            Transaction transaction = transactions[i];
+            printf("\t\tport :%d\n\t\ttimestamp: %lds %ldus\n\t\tdata: %s\n\t-------------\n", transaction.port, transaction.timestamp.tv_sec, transaction.timestamp.tv_usec, transaction.message);
         }
     }
 }
@@ -309,14 +411,14 @@ void update_response_time(uint16_t *known_nodes, uint16_t sender_port, struct ti
 {
     for (size_t i = 0; i < MAX_NODES; i++)
     {
-        if (known_nodes[i] != 0 && known_nodes[i] == sender_port)
+        if (known_nodes[i] == sender_port)
         {
             struct timeval now;
             gettimeofday(&now, NULL);
 
             memcpy(&known_nodes_alive_time[i], &now, sizeof(struct timeval));
 
-            // printf("updated %d port with response time of %ld\n", received_ports[i], known_nodes_alive_time[j].tv_sec);
+            // printf("updated %d port with response time of %ld\n", known_nodes[i], known_nodes_alive_time[i].tv_sec);
         }
     }
 }
@@ -335,15 +437,38 @@ size_t append(uint16_t *array, size_t *length, uint16_t port)
     printf("cannot append to array with maximum length");
 }
 
-size_t get_count(uint16_t *array)
+int index_of_oldest_timestamp()
 {
-    size_t count = 0;
-    for (size_t i = 0; i < MAX_NODES; i++)
+    int min_index;
+    time_t min_sec = INT64_MAX;
+    long int min_usec = INT64_MAX;
+    for (int i = 0; i < MAX_TRANSACTIONS; i++)
     {
-        if (array[i] != 0)
+        struct timeval timestamp = transactions[i].timestamp;
+        if (timestamp.tv_sec < min_sec)
         {
-            count++;
+            min_sec = timestamp.tv_sec;
+            min_usec = timestamp.tv_usec;
+            min_index = i;
+        }
+        else if (timestamp.tv_sec == min_sec)
+        {
+            if (timestamp.tv_usec < min_usec)
+            {
+                min_usec = timestamp.tv_usec;
+                min_index = i;
+            }
         }
     }
-    return count;
+    return min_index;
+}
+
+bool am_i_block_creator()
+{
+    int oldest_timestamp = index_of_oldest_timestamp();
+    if (transactions[oldest_timestamp].port == port)
+    {
+        return true;
+    }
+    return false;
 }

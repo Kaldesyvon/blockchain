@@ -1,2 +1,2 @@
 all:
-	gcc node.c -lpthread -o node
+	gcc node.c -lpthread -lcrypto -o node
