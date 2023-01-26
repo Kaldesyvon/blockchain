@@ -3,7 +3,7 @@
 static bool run_threads = true;
 static uint16_t port;
 
-int main(const int argc, const char *argv[]) // todo: add alive nodes list that newly created thread will count aliveness of node and if trehsold is exceded, than remove from known nodes
+int main(const int argc, const char *argv[])
 {
     port = atoi(argv[1]);
     int port_to_connect = atoi(argv[2]);
@@ -61,9 +61,9 @@ int main(const int argc, const char *argv[]) // todo: add alive nodes list that 
         {
             if (*known_nodes_count == 0)
             {
-                printf("\tno node is known");
+                printf("\tno node is known\n");
             }
-            print_known_nodes(known_nodes, *known_nodes_count);
+            print_known_nodes(known_nodes);
         }
         else if (strcmp(input, "help") == 0)
         {
@@ -117,6 +117,8 @@ void *listen_messages(void *arg)
 
         uint16_t sender_port = ntohs(cliaddr.sin_port);
 
+        update_response_time(known_nodes, sender_port, known_nodes_alive_time);
+
         if (packet.type == MSG_TYPE_ORDINARY)
         {
             // printf("got message with length of %ld\n", packet.len);
@@ -130,15 +132,15 @@ void *listen_messages(void *arg)
                 continue;
             }
 
-            size_t number_of_nodes = packet.len;
+            // size_t number_of_nodes = packet.len;
 
             // printf("got hearbeat with %ld nodes\n", number_of_nodes);
 
-            uint16_t *received_ports = (uint16_t *)calloc(len, sizeof(uint16_t));
+            uint16_t *received_ports = (uint16_t *)calloc(MAXNODES, sizeof(uint16_t));
 
-            memcpy(received_ports, packet.data.ports, len * sizeof(uint16_t));
+            memcpy(received_ports, packet.data.ports, MAXNODES * sizeof(uint16_t));
 
-            merge_known_ports(known_nodes, known_nodes_count, received_ports, packet.len, known_nodes_alive_time);
+            merge_known_ports(known_nodes, known_nodes_count, received_ports);
 
             free(received_ports);
         }
@@ -153,8 +155,9 @@ void *listen_messages(void *arg)
 
 void send_message(int socketfd, char *message, uint16_t *known_nodes, size_t known_nodes_count)
 {
-    for (size_t i = 0; i < known_nodes_count; i++)
+    for (size_t i = 0; i < MAXNODES && known_nodes[i] != 0; i++)
     {
+
         struct sockaddr_in servaddr;
 
         servaddr.sin_family = AF_INET;
@@ -203,7 +206,7 @@ void *send_heartbeat(void *arg)
             packet.type = MSG_TYPE_HEARTBEAT;
             packet.len = *known_nodes_count + 1;
 
-            memcpy(&packet.data.ports, known_nodes, packet.len * sizeof(uint16_t));
+            memcpy(&packet.data.ports, known_nodes, MAXNODES * sizeof(uint16_t));
             memcpy(&packet.data.ports[*known_nodes_count], &port, sizeof(uint16_t));
 
             if (run_threads)
@@ -226,13 +229,13 @@ void reduce_dead_nodes(uint16_t *known_nodes, size_t *known_nodes_count, struct 
             struct timeval now;
             gettimeofday(&now, NULL);
 
-            printf("now: %ld last response %ld\n", now.tv_sec, known_nodes_alive_time[i].tv_sec);
+            // printf("now: %ld last response %ld\n", now.tv_sec, known_nodes_alive_time[i].tv_sec);
 
             if (now.tv_sec - known_nodes_alive_time[i].tv_sec > MAX_TIMEOUT)
             {
-                // node dont respond for 5 sec
                 known_nodes[i] = 0;
                 *known_nodes_count -= 1;
+                memset(&known_nodes_alive_time[i], 0, sizeof(struct timeval));
             }
         }
     }
@@ -264,37 +267,52 @@ int create_socket_and_bind(int port)
     return socketfd;
 }
 
-void print_known_nodes(uint16_t *known_nodes, size_t known_nodes_count)
+void print_known_nodes(uint16_t *known_nodes)
 {
-    for (size_t i = 0; i < known_nodes_count; i++)
+    for (size_t i = 0; i < MAXNODES; i++)
     {
-        printf("\tknown node: %d\n", known_nodes[i]);
+        if (known_nodes[i] != 0)
+        {
+            printf("\tknown node: %d\n", known_nodes[i]);
+        }
     }
 }
 
-void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_t *received_ports, size_t received_ports_count, struct timeval *known_nodes_alive_time)
+void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_t *received_ports)
 {
-    for (size_t i = 0; i < received_ports_count; i++)
+    for (size_t i = 0; i < MAXNODES; i++)
     {
-        if (received_ports[i] == port || received_ports[i] == 0)
-            continue;
-        bool is_present = false;
-        for (size_t j = 0; j < *known_nodes_count; j++)
+        if (received_ports[i] != port && received_ports[i] != 0)
         {
-            if (known_nodes[j] == received_ports[i])
+            bool is_present = false;
+            for (size_t j = 0; j < MAXNODES; j++)
             {
-                is_present = true;
-                break;
+                if (known_nodes[j] == received_ports[i])
+                {
+                    is_present = true;
+                    break;
+                }
+            }
+            if (!is_present)
+            {
+                size_t appended_position = append(known_nodes, known_nodes_count, received_ports[i]);
             }
         }
-        if (!is_present)
-        {
-            size_t appended_position = append(known_nodes, known_nodes_count, received_ports[i]);
+    }
+}
 
+void update_response_time(uint16_t *known_nodes, uint16_t sender_port, struct timeval *known_nodes_alive_time)
+{
+    for (size_t i = 0; i < MAXNODES; i++)
+    {
+        if (known_nodes[i] != 0 && known_nodes[i] == sender_port)
+        {
             struct timeval now;
             gettimeofday(&now, NULL);
 
-            known_nodes_alive_time[appended_position] = now;
+            memcpy(&known_nodes_alive_time[i], &now, sizeof(struct timeval));
+
+            // printf("updated %d port with response time of %ld\n", received_ports[i], known_nodes_alive_time[j].tv_sec);
         }
     }
 }

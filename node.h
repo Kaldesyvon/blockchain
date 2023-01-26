@@ -47,10 +47,11 @@ int create_socket_and_bind(int port);
 size_t get_count(uint16_t *array);
 size_t append(uint16_t *array, size_t *length, uint16_t port);
 void *listen_messages(void *arg);
-void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_t *received_ports, size_t received_ports_count, struct timeval *known_nodes_alive_time);
-void print_known_nodes(uint16_t *known_nodes, size_t known_nodes_count);
+void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_t *received_ports);
+void print_known_nodes(uint16_t *known_nodes);
 void *send_heartbeat(void *arg);
 void send_message(int socketfd, char *message, uint16_t *known_nodes, size_t known_nodes_count);
 void reduce_dead_nodes(uint16_t *known_nodes, size_t *known_nodes_count, struct timeval *known_nodes_alive_time);
+void update_response_time(uint16_t *known_nodes, uint16_t sender_port, struct timeval *known_nodes_alive_time);
 
 #endif
