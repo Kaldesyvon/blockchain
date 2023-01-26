@@ -117,8 +117,6 @@ void *listen_messages(void *arg)
 
         uint16_t sender_port = ntohs(cliaddr.sin_port);
 
-        update_response_time(known_nodes, sender_port, known_nodes_alive_time);
-
         if (packet.type == MSG_TYPE_ORDINARY)
         {
             // printf("got message with length of %ld\n", packet.len);
@@ -126,6 +124,7 @@ void *listen_messages(void *arg)
         }
         else if (packet.type == MSG_TYPE_HEARTBEAT)
         {
+            printf("got heartbeat from %d\n", sender_port);
             if (*known_nodes_count == MAX_NODES)
             {
                 printf("this node has maximum count of known nodes!\n");
@@ -138,7 +137,7 @@ void *listen_messages(void *arg)
 
             uint16_t *received_ports = (uint16_t *)calloc(MAX_NODES, sizeof(uint16_t));
 
-            memcpy(received_ports, packet.data.ports, MAX_NODES * sizeof(uint16_t));
+            memcpy(received_ports, packet.data.ports, MAX_NODES * sizeof(uint16_t)); // potiential error with index out of range
 
             merge_known_ports(known_nodes, known_nodes_count, received_ports);
 
@@ -148,6 +147,7 @@ void *listen_messages(void *arg)
         {
             printf("cannot distinguish message type");
         }
+        update_response_time(known_nodes, sender_port, known_nodes_alive_time);
     }
     pthread_exit(NULL);
     return NULL;
@@ -188,30 +188,33 @@ void *send_heartbeat(void *arg)
 
         reduce_dead_nodes(known_nodes, known_nodes_count, known_nodes_alive_time);
 
-        for (size_t i = 0; i < *known_nodes_count; i++)
+        for (size_t i = 0; i < MAX_NODES; i++)
         {
-            struct sockaddr_in servaddr;
+            if (known_nodes[i] != 0)
+            {
+                printf("sending heartbeat to %d\n", known_nodes[i]);
 
-            servaddr.sin_family = AF_INET;
-            servaddr.sin_addr.s_addr = INADDR_ANY;
-            servaddr.sin_port = htons(known_nodes[i]);
+                struct sockaddr_in servaddr;
 
-            // printf("sending heartbeat from %d to %d\n", port, known_nodes[i]);
+                servaddr.sin_family = AF_INET;
+                servaddr.sin_addr.s_addr = INADDR_ANY;
+                servaddr.sin_port = htons(known_nodes[i]);
 
-            Packet packet;
+                Packet packet;
 
-            memset(&packet, 0, sizeof(Packet));
+                memset(&packet, 0, sizeof(Packet));
 
-            packet.type = MSG_TYPE_HEARTBEAT;
-            packet.len = *known_nodes_count + 1;
+                packet.type = MSG_TYPE_HEARTBEAT;
+                packet.len = *known_nodes_count + 1;
 
-            memcpy(&packet.data.ports, known_nodes, MAX_NODES * sizeof(uint16_t));
-            memcpy(&packet.data.ports[*known_nodes_count], &port, sizeof(uint16_t));
+                memcpy(&packet.data.ports, known_nodes, MAX_NODES * sizeof(uint16_t));
+                memcpy(&packet.data.ports[*known_nodes_count], &port, sizeof(uint16_t));
 
-            if (run_threads)
-                sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+                if (run_threads)
+                    sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
 
-            // printf("send %ld of bytes where packet is %ld\n", send_size, sizeof(packet));
+                // printf("send %ld of bytes where packet is %ld\n", send_size, sizeof(packet));
+            }
         }
     }
 
@@ -223,15 +226,17 @@ void reduce_dead_nodes(uint16_t *known_nodes, size_t *known_nodes_count, struct 
 {
     for (size_t i = 0; i < MAX_NODES; i++)
     {
-        if (known_nodes[i] != 0)
+        if (known_nodes[i] != 0 && known_nodes_alive_time[i].tv_sec != 0)
         {
             struct timeval now;
             gettimeofday(&now, NULL);
 
-            // printf("now: %ld last response %ld\n", now.tv_sec, known_nodes_alive_time[i].tv_sec);
+            printf("now: %ld last response %ld\n", now.tv_sec, known_nodes_alive_time[i].tv_sec);
 
             if (now.tv_sec - known_nodes_alive_time[i].tv_sec > MAX_TIMEOUT)
             {
+                printf("removing %d\n", known_nodes[i]);
+
                 known_nodes[i] = 0;
                 *known_nodes_count -= 1;
                 memset(&known_nodes_alive_time[i], 0, sizeof(struct timeval));
