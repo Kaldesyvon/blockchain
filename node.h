@@ -25,6 +25,7 @@
 #define MSG_TYPE_ORDINARY 1
 #define MSG_TYPE_TRANSACTION 2
 #define MSG_TYPE_BLOCK 3
+#define MSG_TYPE_BLOCK_FORCED 4
 
 typedef struct Transaction
 {
@@ -69,6 +70,7 @@ static size_t transaction_count = 0;
 static Transaction *transactions;
 
 static size_t blockchain_length = 1;
+static size_t blockchain_max_index = 0;
 static Block *blockchain;
 
 size_t append(uint16_t *array, size_t *length, uint16_t port);
@@ -85,5 +87,5 @@ void print_transactions();
 void handle_transaction(Transaction *transaction, int socket, uint16_t *known_nodes);
 void create_block();
 void print_blockchain();
-
+bool validate_block(Block *block);
 #endif

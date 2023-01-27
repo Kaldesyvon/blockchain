@@ -164,13 +164,26 @@ void *listen_messages(void *arg)
         }
         else if (packet.type == MSG_TYPE_BLOCK)
         {
-            blockchain_length++;
+            if (validate_block(&packet.data.block))
+            {
+                blockchain_length++;
+                blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
 
+                memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
+            }
+            else
+            {
+                send_message(socketfd, "block", &sender_port, MSG_TYPE_BLOCK_FORCED);
+            }
+
+            // printf("got block\n");
+        }
+        else if (packet.type == MSG_TYPE_BLOCK_FORCED)
+        {
+            // blockchain_length++;
             blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
 
             memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
-
-            // printf("got block\n");
         }
         else
         {
@@ -223,7 +236,7 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
 
             // printf("sending transaction\n");
         }
-        else if (msg_type == MSG_TYPE_BLOCK)
+        else if (msg_type == MSG_TYPE_BLOCK | MSG_TYPE_BLOCK_FORCED)
         {
             Block block;
             memset(&block, 0, sizeof(Block));
@@ -245,6 +258,16 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
             printf("error sending packet\n");
         }
     }
+}
+
+bool validate_block(Block *block)
+{
+    if (blockchain[blockchain_length - 1].index >= block->index)
+    {
+        printf("non valid, resending latest block\n");
+        return false;
+    }
+    return true;
 }
 
 void handle_transaction(Transaction *transaction, int socketfd, uint16_t *known_nodes)
