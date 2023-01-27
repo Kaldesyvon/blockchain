@@ -68,7 +68,7 @@ typedef struct Parameters
 static size_t transaction_count = 0;
 static Transaction *transactions;
 
-static size_t blockchain_length = 0;
+static size_t blockchain_length = 1;
 static Block *blockchain;
 
 size_t append(uint16_t *array, size_t *length, uint16_t port);
@@ -82,7 +82,8 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
 void update_response_time(uint16_t *known_nodes, uint16_t sender_port, struct timeval *known_nodes_alive_time);
 bool am_i_block_creator();
 void print_transactions();
-void handle_transaction(Transaction *transaction);
+void handle_transaction(Transaction *transaction, int socket, uint16_t *known_nodes);
 void create_block();
+void print_blockchain();
 
 #endif

@@ -75,6 +75,10 @@ int main(const int argc, const char *argv[])
         {
             print_known_nodes(known_nodes, *known_nodes_count);
         }
+        else if (strcmp(input, "block") == 0)
+        {
+            print_blockchain();
+        }
         else if (strcmp(input, "help") == 0)
         {
             printf("\tshowing help:\n");
@@ -156,11 +160,17 @@ void *listen_messages(void *arg)
             Transaction transaction;
             memcpy(&transaction, &packet.data.transaction, sizeof(Transaction));
 
-            handle_transaction(&transaction);
+            handle_transaction(&transaction, socketfd, known_nodes);
         }
         else if (packet.type == MSG_TYPE_BLOCK)
         {
-            // TODO: add block to local blockchain
+            blockchain_length++;
+
+            blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
+
+            memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
+
+            // printf("got block\n");
         }
         else
         {
@@ -207,7 +217,7 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
 
             if (!is_transaction_added)
             {
-                handle_transaction(&transaction);
+                handle_transaction(&transaction, socketfd, known_nodes);
                 is_transaction_added = true;
             }
 
@@ -215,7 +225,14 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
         }
         else if (msg_type == MSG_TYPE_BLOCK)
         {
-            // todo
+            Block block;
+            memset(&block, 0, sizeof(Block));
+
+            memcpy(&block, &blockchain[blockchain_length - 1], sizeof(Block));
+
+            memcpy(&packet.data.block, &block, sizeof(Block));
+
+            // printf("block sended\n");
         }
         else
         {
@@ -230,7 +247,7 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
     }
 }
 
-void handle_transaction(Transaction *transaction)
+void handle_transaction(Transaction *transaction, int socketfd, uint16_t *known_nodes)
 {
     memcpy(&transactions[transaction_count], transaction, sizeof(Transaction));
     if (transaction_count < MAX_TRANSACTIONS - 1)
@@ -242,10 +259,10 @@ void handle_transaction(Transaction *transaction)
         bool am_i_creator = am_i_block_creator();
         if (am_i_creator)
         {
-            // todo: create block and send it
             create_block();
+            send_message(socketfd, "block", known_nodes, MSG_TYPE_BLOCK);
         }
-        printf("i am creator: %d\n", am_i_creator);
+        // printf("i am creator: %d\n", am_i_creator);
         memset(transactions, 0, MAX_TRANSACTIONS * sizeof(Transaction));
         transaction_count = 0;
     }
@@ -260,11 +277,9 @@ void create_block()
     blockchain_length++;
     unsigned long buffer_size = MAX_TRANSACTIONS * sizeof(Transaction);
 
-    printf("here\n");
-
-    new_block.index = blockchain_length;
+    new_block.index = blockchain_length - 1;
     gettimeofday(&new_block.timestamp, NULL);
-    memcpy(&new_block.transactions, &transactions, buffer_size);
+    memcpy(&new_block.transactions, transactions, buffer_size);
 
     unsigned char *buffer = (unsigned char *)malloc(buffer_size);
 
@@ -280,18 +295,20 @@ void create_block()
     SHA256_Update(&sha256, buffer, buffer_size);
     SHA256_Final(new_block.hash, &sha256);
 
-    printf("created block with:\n\tindex: %ld\n\t", new_block.index);
-    for (size_t i = 0; i < sizeof(new_block.hash); ++i)
-    {
-        printf("%02x", new_block.hash[i]);
-    }
-    printf("\n");
+    memcpy(&new_block.pervious_hash, &blockchain[blockchain_length - 2].hash, SHA256_DIGEST_LENGTH * sizeof(unsigned char));
 
-    // TODO: print of blocks in memory of node and send message about this block
+    // printf("created block with:\n\tindex: %ld\n\t", new_block.index);
+    // for (size_t i = 0; i < sizeof(new_block.hash); ++i)
+    // {
+    //     printf("%02x", new_block.hash[i]);
+    // }
+    // printf("\n");
 
-    blockchain = (Block *)realloc(blockchain, (blockchain_length + 1) * sizeof(Block));
+    printf("I created block\n");
 
-    memcpy(&blockchain[blockchain_length], &new_block, sizeof(Block));
+    blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
+
+    memcpy(&blockchain[blockchain_length - 1], &new_block, sizeof(Block));
 
     free(buffer);
 }
@@ -342,6 +359,30 @@ void *send_heartbeat(void *arg)
 
     pthread_exit(NULL);
     return NULL;
+}
+
+void print_blockchain()
+{
+    for (size_t j = 0; j < blockchain_length; j++)
+    {
+        Block block = blockchain[j];
+        printf("\tBlock %ld.:\n\t\thash: ", block.index);
+        for (size_t i = 0; i < sizeof(block.hash); i++)
+        {
+            printf("%02x", block.hash[i]);
+        }
+        printf("\n\t\tpervious hash: ");
+        for (size_t i = 0; i < sizeof(block.pervious_hash); i++)
+        {
+            printf("%02x", block.pervious_hash[i]);
+        }
+        printf("\n\t\tcreated at: %lds %ldus\n\t\ttransactions:\n", block.timestamp.tv_sec, block.timestamp.tv_usec);
+        for (int i = 0; i < MAX_TRANSACTIONS; i++)
+        {
+            Transaction transaction = block.transactions[i];
+            printf("\t\t\tport :%d\n\t\t\ttimestamp: %lds %ldus\n\t\t\tdata: %s\n\t\t\t-------------\n", transaction.port, transaction.timestamp.tv_sec, transaction.timestamp.tv_usec, transaction.message);
+        }
+    }
 }
 
 void reduce_dead_nodes(uint16_t *known_nodes, size_t *known_nodes_count, struct timeval *known_nodes_alive_time)
