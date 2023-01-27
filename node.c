@@ -26,6 +26,10 @@ int main(const int argc, const char *argv[])
     blockchain = (Block *)malloc(sizeof(Block));
     memset(blockchain, 0, sizeof(Block)); // genesis block
 
+    socketfd = create_socket_and_bind(port);
+
+    // read_block_from_file();
+
     if (port_to_connect != 0)
     {
         known_nodes[*known_nodes_count] = port_to_connect;
@@ -35,17 +39,16 @@ int main(const int argc, const char *argv[])
         gettimeofday(&now, NULL);
         known_nodes_alive_time[0] = now;
 
+        request_blocks(socketfd, port_to_connect);
         // printf("inital node known at: %ld\n", known_nodes_alive_time[0].tv_sec);
     }
-
-    socketfd = create_socket_and_bind(port);
 
     params.socketfd_param = socketfd;
     params.known_nodes_param = known_nodes;
     params.known_nodes_alive_time_param = known_nodes_alive_time;
     params.known_nodes_count_param = known_nodes_count;
 
-    pthread_t listen_thread_id, listen_heartbeat_thread_id, send_heartbeat_thread_id;
+    pthread_t listen_thread_id, send_heartbeat_thread_id;
 
     pthread_create(&listen_thread_id, NULL, listen_messages, &params);
     pthread_create(&send_heartbeat_thread_id, NULL, send_heartbeat, &params);
@@ -92,6 +95,7 @@ int main(const int argc, const char *argv[])
         {
             printf("\texiting...\n");
             run_threads = false;
+            // write_block_to_file();
             break;
         }
         else
@@ -164,23 +168,46 @@ void *listen_messages(void *arg)
         }
         else if (packet.type == MSG_TYPE_BLOCK)
         {
-            if (validate_block(&packet.data.block))
-            {
-                blockchain_length++;
-                blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
+            // if (validate_block(&packet.data.block))
+            // {
+            blockchain_length++;
+            blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
 
-                memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
-            }
-            else
-            {
-                send_message(socketfd, "block", &sender_port, MSG_TYPE_BLOCK_FORCED);
-            }
+            memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
+            // }
+            // else
+            // {
+            //     send_message(socketfd, "block", &sender_port, MSG_TYPE_BLOCK_FORCED);
+            // }
 
             // printf("got block\n");
         }
-        else if (packet.type == MSG_TYPE_BLOCK_FORCED)
+        // else if (packet.type == MSG_TYPE_BLOCK_FORCED)
+        // {
+        //     // blockchain_length++;
+        //     blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
+
+        //     memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
+        // }
+        else if (packet.type == MSG_TYPE_BLOCK_REQUEST)
         {
-            // blockchain_length++;
+            for (int i = 1; i < blockchain_length; i++)
+            {
+                struct sockaddr_in servaddr;
+
+                servaddr.sin_family = AF_INET;
+                servaddr.sin_addr.s_addr = INADDR_ANY;
+                servaddr.sin_port = htons(sender_port);
+
+                Packet packet;
+                memset(&packet, 0, sizeof(Packet));
+
+                packet.type = MSG_TYPE_BLOCK;
+                memcpy(&packet.data, &blockchain[i], sizeof(Block));
+
+                sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+            }
+
             blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
 
             memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
@@ -234,9 +261,9 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
                 is_transaction_added = true;
             }
 
-            // printf("sending transaction\n");
+            printf("sending transaction\n");
         }
-        else if (msg_type == MSG_TYPE_BLOCK | MSG_TYPE_BLOCK_FORCED)
+        else if (msg_type == MSG_TYPE_BLOCK || msg_type == MSG_TYPE_BLOCK_FORCED)
         {
             Block block;
             memset(&block, 0, sizeof(Block));
@@ -279,8 +306,7 @@ void handle_transaction(Transaction *transaction, int socketfd, uint16_t *known_
     }
     else
     {
-        bool am_i_creator = am_i_block_creator();
-        if (am_i_creator)
+        if (am_i_block_creator(known_nodes))
         {
             create_block();
             send_message(socketfd, "block", known_nodes, MSG_TYPE_BLOCK);
@@ -333,8 +359,71 @@ void create_block()
 
     memcpy(&blockchain[blockchain_length - 1], &new_block, sizeof(Block));
 
+    // write_block_to_file();
+
     free(buffer);
 }
+
+// void write_block_to_file()
+// {
+//     char filename[9];
+//     sprintf(filename, "%d", port);
+
+//     FILE *fp = fopen(strcat(filename, ".txt"), "w");
+
+//     if (fp == NULL)
+//     {
+//         printf("error opening file for writing block\n");
+//         return;
+//     }
+
+//     Block block = blockchain[blockchain_length - 1];
+
+//     uint64_t block_index = block.index;
+//     time_t block_sec = block.timestamp.tv_sec;
+//     unsigned long block_usec = block.timestamp.tv_usec;
+
+//     fprintf(fp, "%ld\n%ld\n%ld\n", block_index, block_sec, block_usec);
+
+//     for (size_t j = 0; j < sizeof(block.hash); j++)
+//     {
+//         fprintf(fp, "%02x", block.hash[j]);
+//     }
+//     fprintf(fp, "\n");
+//     for (size_t j = 0; j < sizeof(block.pervious_hash); j++)
+//     {
+//         fprintf(fp, "%02x", block.pervious_hash[j]);
+//     }
+//     fprintf(fp, "\n");
+
+//     for (size_t j = 0; j < MAX_TRANSACTIONS; j++)
+//     {
+//         Transaction transaction = block.transactions[j];
+//         if (&transaction != 0)
+//         {
+//             fprintf(fp, "%d\n%ld\n%ld\n%s\n", transaction.port, transaction.timestamp.tv_sec, transaction.timestamp.tv_usec, transaction.message);
+//         }
+//     }
+
+//     fclose(fp);
+// }
+
+// void read_block_from_file(){
+//     char filename[9];
+//     sprintf(filename, "%d", port);
+
+//     FILE *fp = fopen(strcat(filename, ".txt"), "r");
+
+//     if (fp == NULL)
+//     {
+//         printf("error opening file for reading block\n");
+//         return;
+//     }
+
+//     Block block
+
+//     fscanf(fp,"")
+// }
 
 void *send_heartbeat(void *arg)
 {
@@ -382,6 +471,27 @@ void *send_heartbeat(void *arg)
 
     pthread_exit(NULL);
     return NULL;
+}
+
+void request_blocks(int socketfd, uint16_t port_to_request)
+{
+    struct sockaddr_in servaddr;
+
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_port = htons(port_to_request);
+
+    Packet packet;
+    memset(&packet, 0, sizeof(Packet));
+
+    packet.type = MSG_TYPE_BLOCK_REQUEST;
+
+    printf("%d\n", port_to_request);
+
+    if (sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)
+    {
+        printf("error requesting blocks\n");
+    }
 }
 
 void print_blockchain()
@@ -509,7 +619,7 @@ void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_
             }
             if (!is_present)
             {
-                size_t appended_position = append(known_nodes, known_nodes_count, received_ports[i]);
+                append(known_nodes, known_nodes_count, received_ports[i]);
             }
         }
     }
@@ -543,37 +653,54 @@ size_t append(uint16_t *array, size_t *length, uint16_t port)
         }
     }
     printf("cannot append to array with maximum length");
+    return -1;
 }
 
-int index_of_oldest_timestamp()
+bool is_known_node(uint16_t port_to_find, uint16_t *known_nodes)
 {
-    int min_index;
+    for (size_t i = 0; i < MAX_NODES; i++)
+    {
+        if (known_nodes[i] != 0 && port_to_find == known_nodes[i])
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+int index_of_oldest_timestamp(uint16_t *known_nodes)
+{
+    int min_index = 0;
     time_t min_sec = INT64_MAX;
     long int min_usec = INT64_MAX;
+
     for (int i = 0; i < MAX_TRANSACTIONS; i++)
     {
         struct timeval timestamp = transactions[i].timestamp;
-        if (timestamp.tv_sec < min_sec)
+        if (port == transactions[i].port || is_known_node(transactions[i].port, known_nodes))
         {
-            min_sec = timestamp.tv_sec;
-            min_usec = timestamp.tv_usec;
-            min_index = i;
-        }
-        else if (timestamp.tv_sec == min_sec)
-        {
-            if (timestamp.tv_usec < min_usec)
+            if (timestamp.tv_sec < min_sec)
             {
+                min_sec = timestamp.tv_sec;
                 min_usec = timestamp.tv_usec;
                 min_index = i;
+            }
+            else if (timestamp.tv_sec == min_sec)
+            {
+                if (timestamp.tv_usec < min_usec)
+                {
+                    min_usec = timestamp.tv_usec;
+                    min_index = i;
+                }
             }
         }
     }
     return min_index;
 }
 
-bool am_i_block_creator()
+bool am_i_block_creator(uint16_t *known_nodes)
 {
-    int oldest_timestamp = index_of_oldest_timestamp();
+    int oldest_timestamp = index_of_oldest_timestamp(known_nodes);
     if (transactions[oldest_timestamp].port == port)
     {
         return true;

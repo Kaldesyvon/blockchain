@@ -17,8 +17,8 @@
 
 #define MAX_LINE 1024
 #define MAX_NODES 6
-#define HEARTBEAT_TIMER 1
-#define MAX_TIMEOUT 5
+#define HEARTBEAT_TIMER 0.1
+#define MAX_TIMEOUT 1
 #define MAX_TRANSACTIONS 2
 
 #define MSG_TYPE_HEARTBEAT 0
@@ -26,10 +26,11 @@
 #define MSG_TYPE_TRANSACTION 2
 #define MSG_TYPE_BLOCK 3
 #define MSG_TYPE_BLOCK_FORCED 4
+#define MSG_TYPE_BLOCK_REQUEST 5
 
 typedef struct Transaction
 {
-    int port;
+    uint16_t port;
     struct timeval timestamp;
     char message[MAX_LINE];
 } Transaction;
@@ -70,7 +71,6 @@ static size_t transaction_count = 0;
 static Transaction *transactions;
 
 static size_t blockchain_length = 1;
-static size_t blockchain_max_index = 0;
 static Block *blockchain;
 
 size_t append(uint16_t *array, size_t *length, uint16_t port);
@@ -82,10 +82,15 @@ void reduce_dead_nodes(uint16_t *known_nodes, size_t *known_nodes_count, struct 
 void *send_heartbeat(void *arg);
 void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_type);
 void update_response_time(uint16_t *known_nodes, uint16_t sender_port, struct timeval *known_nodes_alive_time);
-bool am_i_block_creator();
+bool am_i_block_creator(uint16_t *known_nodes);
 void print_transactions();
 void handle_transaction(Transaction *transaction, int socket, uint16_t *known_nodes);
 void create_block();
 void print_blockchain();
 bool validate_block(Block *block);
+void write_block_to_file();
+void read_block_from_file();
+
+void request_blocks(int socketfd, uint16_t port_to_request);
+
 #endif
