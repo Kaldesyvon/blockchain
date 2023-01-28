@@ -68,13 +68,17 @@ int main(const int argc, const char *argv[])
         }
         else if (strcmp(input, "trans") == 0)
         {
-            send_message(socketfd, "transaction", known_nodes, MSG_TYPE_TRANSACTION);
+            char message[1024];
+            printf("\tmessage: ");
+            scanf("%s", message);
+            send_message(socketfd, message, known_nodes, MSG_TYPE_TRANSACTION);
+            // send_message(socketfd, "transaction", known_nodes, MSG_TYPE_TRANSACTION);
         }
-        else if (strcmp(input, "transprint") == 0)
+        else if (strcmp(input, "transp") == 0)
         {
             print_transactions();
         }
-        else if (strcmp(input, "print") == 0)
+        else if (strcmp(input, "nodes") == 0)
         {
             print_known_nodes(known_nodes, *known_nodes_count);
         }
@@ -85,9 +89,10 @@ int main(const int argc, const char *argv[])
         else if (strcmp(input, "help") == 0)
         {
             printf("\tshowing help:\n");
-            printf("\t\tprint\t print known nodes\n");
-            printf("\t\ttransprint \tprint known transactions");
+            printf("\t\tnodes\t print known nodes\n");
+            printf("\t\ttransp \tprint known transactions");
             printf("\t\ttrans\t create transaction\n");
+            printf("\t\block\t show blockchain\n");
             printf("\t\texit\t end program\n");
             printf("\t\tsend\t send message to all known nodes\n");
         }
@@ -168,27 +173,27 @@ void *listen_messages(void *arg)
         }
         else if (packet.type == MSG_TYPE_BLOCK)
         {
-            // if (validate_block(&packet.data.block))
-            // {
-            blockchain_length++;
+            if (validate_block(&packet.data.block))
+            {
+                blockchain_length++;
+                blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
+
+                memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
+            }
+            else
+            {
+                send_message(socketfd, "block", &sender_port, MSG_TYPE_BLOCK_FORCED);
+            }
+
+            printf("got block\n");
+        }
+        else if (packet.type == MSG_TYPE_BLOCK_FORCED)
+        {
+            // blockchain_length++;
             blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
 
             memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
-            // }
-            // else
-            // {
-            //     send_message(socketfd, "block", &sender_port, MSG_TYPE_BLOCK_FORCED);
-            // }
-
-            // printf("got block\n");
         }
-        // else if (packet.type == MSG_TYPE_BLOCK_FORCED)
-        // {
-        //     // blockchain_length++;
-        //     blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
-
-        //     memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
-        // }
         else if (packet.type == MSG_TYPE_BLOCK_REQUEST)
         {
             for (int i = 1; i < blockchain_length; i++)
@@ -251,7 +256,7 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
 
             transaction.port = port;
             gettimeofday(&transaction.timestamp, NULL);
-            memcpy(&transaction.message, "transaction", sizeof("transaction"));
+            memcpy(&transaction.message, message, sizeof(message));
 
             memcpy(&packet.data.transaction, &transaction, sizeof(Transaction));
 
@@ -285,6 +290,54 @@ void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_ty
             printf("error sending packet\n");
         }
     }
+}
+
+void *send_heartbeat(void *arg)
+{
+    Parameters *params = (Parameters *)arg;
+    int socketfd = params->socketfd_param;
+    uint16_t *known_nodes = params->known_nodes_param;
+    struct timeval *known_nodes_alive_time = params->known_nodes_alive_time_param;
+    size_t *known_nodes_count = params->known_nodes_count_param;
+
+    while (run_threads)
+    {
+        sleep(HEARTBEAT_TIMER);
+
+        reduce_dead_nodes(known_nodes, known_nodes_count, known_nodes_alive_time);
+
+        for (size_t i = 0; i < MAX_NODES; i++)
+        {
+            if (known_nodes[i] != 0)
+            {
+                // printf("sending heartbeat to %d\n", known_nodes[i]);
+
+                struct sockaddr_in servaddr;
+
+                servaddr.sin_family = AF_INET;
+                servaddr.sin_addr.s_addr = INADDR_ANY;
+                servaddr.sin_port = htons(known_nodes[i]);
+
+                Packet packet;
+
+                memset(&packet, 0, sizeof(Packet));
+
+                packet.type = MSG_TYPE_HEARTBEAT;
+                packet.len = *known_nodes_count + 1;
+
+                memcpy(&packet.data.ports, known_nodes, MAX_NODES * sizeof(uint16_t));
+                memcpy(&packet.data.ports[*known_nodes_count], &port, sizeof(uint16_t));
+
+                if (run_threads)
+                    sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+
+                // printf("send %ld of bytes where packet is %ld\n", send_size, sizeof(packet));
+            }
+        }
+    }
+
+    pthread_exit(NULL);
+    return NULL;
 }
 
 bool validate_block(Block *block)
@@ -424,54 +477,6 @@ void create_block()
 
 //     fscanf(fp,"")
 // }
-
-void *send_heartbeat(void *arg)
-{
-    Parameters *params = (Parameters *)arg;
-    int socketfd = params->socketfd_param;
-    uint16_t *known_nodes = params->known_nodes_param;
-    struct timeval *known_nodes_alive_time = params->known_nodes_alive_time_param;
-    size_t *known_nodes_count = params->known_nodes_count_param;
-
-    while (run_threads)
-    {
-        sleep(HEARTBEAT_TIMER);
-
-        reduce_dead_nodes(known_nodes, known_nodes_count, known_nodes_alive_time);
-
-        for (size_t i = 0; i < MAX_NODES; i++)
-        {
-            if (known_nodes[i] != 0)
-            {
-                // printf("sending heartbeat to %d\n", known_nodes[i]);
-
-                struct sockaddr_in servaddr;
-
-                servaddr.sin_family = AF_INET;
-                servaddr.sin_addr.s_addr = INADDR_ANY;
-                servaddr.sin_port = htons(known_nodes[i]);
-
-                Packet packet;
-
-                memset(&packet, 0, sizeof(Packet));
-
-                packet.type = MSG_TYPE_HEARTBEAT;
-                packet.len = *known_nodes_count + 1;
-
-                memcpy(&packet.data.ports, known_nodes, MAX_NODES * sizeof(uint16_t));
-                memcpy(&packet.data.ports[*known_nodes_count], &port, sizeof(uint16_t));
-
-                if (run_threads)
-                    sendto(socketfd, &packet, sizeof(packet), MSG_CONFIRM, (const struct sockaddr *)&servaddr, sizeof(servaddr));
-
-                // printf("send %ld of bytes where packet is %ld\n", send_size, sizeof(packet));
-            }
-        }
-    }
-
-    pthread_exit(NULL);
-    return NULL;
-}
 
 void request_blocks(int socketfd, uint16_t port_to_request)
 {
