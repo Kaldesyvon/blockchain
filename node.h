@@ -73,23 +73,24 @@ static Transaction *transactions;
 static size_t blockchain_length = 1;
 static Block *blockchain;
 
+bool am_i_block_creator(uint16_t *known_nodes);
 size_t append(uint16_t *array, size_t *length, uint16_t port);
+void create_block();
 int create_socket_and_bind(int port);
+void handle_transaction(Transaction *transaction, int socket, uint16_t *known_nodes);
 void *listen_messages(void *arg);
+void print_blockchain();
 void merge_known_ports(uint16_t *known_nodes, size_t *known_nodes_count, uint16_t *received_ports);
 void print_known_nodes(uint16_t *known_nodes, size_t known_nodes_count);
+void print_transactions();
 void reduce_dead_nodes(uint16_t *known_nodes, size_t *known_nodes_count, struct timeval *known_nodes_alive_time);
 void *send_heartbeat(void *arg);
 void send_message(int socketfd, char *message, uint16_t *known_nodes, int msg_type);
 void update_response_time(uint16_t *known_nodes, uint16_t sender_port, struct timeval *known_nodes_alive_time);
-bool am_i_block_creator(uint16_t *known_nodes);
-void print_transactions();
-void handle_transaction(Transaction *transaction, int socket, uint16_t *known_nodes);
-void create_block();
-void print_blockchain();
+// TODO:
 bool validate_block(Block *block);
-void write_block_to_file();
-void read_block_from_file();
+// void write_block_to_file();
+// void read_block_from_file();
 
 void request_blocks(int socketfd, uint16_t port_to_request);
 

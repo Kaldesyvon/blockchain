@@ -173,17 +173,17 @@ void *listen_messages(void *arg)
         }
         else if (packet.type == MSG_TYPE_BLOCK)
         {
-            if (validate_block(&packet.data.block))
-            {
-                blockchain_length++;
-                blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
+            // if (validate_block(&packet.data.block))
+            // {
+            blockchain_length++;
+            blockchain = (Block *)realloc(blockchain, blockchain_length * sizeof(Block));
 
-                memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
-            }
-            else
-            {
-                send_message(socketfd, "block", &sender_port, MSG_TYPE_BLOCK_FORCED);
-            }
+            memcpy(&blockchain[blockchain_length - 1], &packet.data.block, sizeof(Block));
+            // }
+            // else
+            // {
+            //     send_message(socketfd, "block", &sender_port, MSG_TYPE_BLOCK_FORCED);
+            // }
 
             printf("got block\n");
         }
