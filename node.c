@@ -90,9 +90,9 @@ int main(const int argc, const char *argv[])
         {
             printf("\tshowing help:\n");
             printf("\t\tnodes\t print known nodes\n");
-            printf("\t\ttransp \tprint known transactions");
+            printf("\t\ttransp \tprint known transactions\n");
             printf("\t\ttrans\t create transaction\n");
-            printf("\t\block\t show blockchain\n");
+            printf("\t\tblock\t show blockchain\n");
             printf("\t\texit\t end program\n");
             printf("\t\tsend\t send message to all known nodes\n");
         }
